@@ -1,0 +1,110 @@
+@startuml
+skinparam classAttributeIconSize 0
+hide circle
+
+class MainMenu {
+  -scanner: Scanner
+  -schedule: EasternSchedule
+  -student: Student
+  --
+  +MainMenu()
+  +open(): void
+  -displayCoursesBySubject(): void
+  -displayCoursesWithCriteria(): void
+  -manageRegistration(): void
+  -displayStudentSchedule(): void
+}
+
+class Student {
+  +{static} final MAX_CREDITS: int = 17
+  -id: String
+  -firstName: String
+  -lastName: String
+  -registeredCourses: List<Course>
+  --
+  +Student()
+  +Student(id: String, firstName: String, lastName: String)
+  +addCourse(course: Course): boolean
+  +dropCourse(course: Course): boolean
+  +dropAllCourses(): void
+  +hasTimeConflict(newCourse: Course): boolean
+  +getTotalCredits(): int
+  +getId(): String
+  +setId(id: String): void
+  +getFirstName(): String
+  +setFirstName(firstName: String): void
+  +getLastName(): String
+  +setLastName(lastName: String): void
+  +getRegisteredCourses(): List<Course>
+  +setRegisteredCourses(courses: List<Course>): void
+}
+
+class EasternSchedule {
+  -{static} BASE: String = "https://reg-prod.ec.easternct.edu/StudentRegistrationSsb"
+  -term: String
+  ~cookieManager: CookieManager
+  ~client: HttpClient
+  --
+  +EasternSchedule()
+  +getTerm(): String
+  -retrieveTerms(): String
+  -parseTerms(content: String): ArrayList<Term>
+  -parseCourses(content: String): ArrayList<Course>
+  +getAvailableTerms(): ArrayList<Term>
+  -postTerm(): String
+  -createCacheFile(subject: String): Path
+  -cacheCourses(subject: String): void
+  +queryCourseBySubject(subject: String): ArrayList<Course>
+  +filterCourses(subject: String, courseNumber: String, onlyOpen: boolean, instructor: String, excludeDay: String): List<Course>
+}
+
+record Course {
+  -id: String
+  -subject: String
+  -courseNumber: String
+  -sequenceNumber: String
+  -courseTitle: String
+  -creditHourLow: int
+  -seatsAvailable: int
+  -meetingsFaculty: List<MeetingFaculty>
+  -faculty: List<Faculty>
+}
+
+record Faculty {
+  -displayName: String
+}
+
+record MeetingFaculty {
+  -meetingTime: MeetingTime
+}
+
+record MeetingTime {
+  -beginTime: String
+  -endTime: String
+  -monday: boolean
+  -tuesday: boolean
+  -wednesday: boolean
+  -thursday: boolean
+  -friday: boolean
+  -saturday: boolean
+  -sunday: boolean
+}
+
+record Term {
+  -code: String
+  -description: String
+}
+
+'Aggregation and composition
+MainMenu "1" o-- "1" EasternSchedule : has a >
+MainMenu "1" o-- "1" Student : manages >
+Student "1" o-- "0..*" Course : registers for >
+MeetingFaculty "1" o-- "1" MeetingTime : has a >
+Course "1" o-- "0..*" MeetingFaculty : has a >
+Course "1" o-- "0..*" Faculty : taught by >
+
+'Dependencies
+EasternSchedule ..> Term : uses
+EasternSchedule ..> Course : uses
+
+@enduml
