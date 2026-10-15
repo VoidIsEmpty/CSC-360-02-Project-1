@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,8 +31,8 @@ public class EasternSchedule {
     private static final String BASE = "https://reg-prod.ec.easternct.edu/StudentRegistrationSsb";
     private String term;
 
-    CookieManager cookieManager;
-    HttpClient client;
+    private CookieManager cookieManager;
+    private HttpClient client;
 
 
     /**
@@ -58,6 +60,19 @@ public class EasternSchedule {
      */
     public String getTerm() {
         return term;
+    }
+
+    /**
+     * Selects the term used by subsequent course searches.
+     *
+     * @param termCode the Eastern term code to use
+     * @throws IllegalArgumentException if the term code is null or blank
+     */
+    public void setTerm(String termCode) {
+        if (termCode == null || termCode.isBlank()) {
+            throw new IllegalArgumentException("Term code must not be blank.");
+        }
+        term = termCode.trim();
     }
 
     /**
@@ -99,10 +114,11 @@ public class EasternSchedule {
     }
 
     /**
-     * Parses the JSON content of available terms into an Arrayist of Terms
-     * @param content The JSON string representing the available terms
-     * @return An ArrayList of Terms
-     * @throws IOException if terms cannot be parsed
+     * Parses the JSON content of available terms into an array list.
+     *
+     * @param content the JSON string representing the available terms
+     * @return the available terms
+     * @throws IOException if the term content cannot be parsed
      */
     private ArrayList<Term> parseTerms(String content) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
@@ -114,11 +130,12 @@ public class EasternSchedule {
         return terms;
     }
 
-    /** 
-     * Parses content into a list of courses
-     * @param content the content to parse
-     * @return ArrayList<Course> an {@link ArrayList} of {@link Course} objects
-     * @throws IOException
+    /**
+     * Parses the schedule response into a list of courses.
+     *
+     * @param content the JSON response to parse
+     * @return the parsed courses
+     * @throws IOException if the response cannot be parsed
      */
     private ArrayList<Course> parseCourses(String content) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
@@ -141,9 +158,10 @@ public class EasternSchedule {
     }
 
     /**
-     * Sets the term for the Eastern schedule
-     * @return The response body from the server after setting the term
-     * @throws Exception If there is an error during the HTTP request
+     * Sets the term for the Eastern schedule on the remote service.
+     *
+     * @return the response body from the server after setting the term
+     * @throws Exception if there is an error during the HTTP request
      */
 
     private String postTerm() throws Exception {
@@ -178,9 +196,11 @@ public class EasternSchedule {
         return response.body();
 }
 
-    /** 
-     * @param subject
-     * @return Path
+    /**
+     * Creates the cache path for a subject in the current term.
+     *
+     * @param subject the subject code
+     * @return the corresponding cache-file path
      */
     private Path createCacheFile(String subject) {
         return Path.of("cache/term_" + term + "_" + subject + ".txt");
@@ -247,5 +267,79 @@ public class EasternSchedule {
         
         ArrayList<Course> courses = parseCourses(content);
         return courses;
-    }   
+    }
+
+    /**
+     * Searches a subject's courses by course number and applies optional
+     * availability, instructor, and excluded-day filters.
+     *
+     * @param subject the required subject code
+     * @param courseNumber the required course number
+     * @param onlyOpen true to include only courses with available seats
+     * @param instructor optional instructor-name substring
+     * @param excludeDay optional full day name or abbreviation to exclude
+     * @return matching courses in the order returned by the schedule
+     * @throws Exception if the course data cannot be retrieved or read
+     * @throws IllegalArgumentException if subject or course number is blank,
+     *         or if the excluded day is not recognized
+     */
+    public List<Course> filterCourses(
+            String subject,
+            String courseNumber,
+            boolean onlyOpen,
+            String instructor,
+            String excludeDay) throws Exception {
+        if (subject == null || subject.isBlank()) {
+            throw new IllegalArgumentException("Subject must not be blank.");
+        }
+        if (courseNumber == null || courseNumber.isBlank()) {
+            throw new IllegalArgumentException("Course number must not be blank.");
+        }
+        if (excludeDay != null && !excludeDay.isBlank() && !isSupportedDay(excludeDay)) {
+            throw new IllegalArgumentException("Unrecognized day: " + excludeDay);
+        }
+
+        String requiredSubject = subject.trim().toUpperCase(Locale.ROOT);
+        String requiredNumber = courseNumber.trim();
+        String instructorQuery = instructor == null ? "" : instructor.trim().toLowerCase(Locale.ROOT);
+        List<Course> matches = new ArrayList<>();
+        for (Course course : queryCourseBySubject(requiredSubject)) {
+            if (!requiredSubject.equalsIgnoreCase(course.subject())
+                    || !requiredNumber.equalsIgnoreCase(course.courseNumber())) {
+                continue;
+            }
+            if (onlyOpen && (course.seatsAvailable() == null || course.seatsAvailable() <= 0)) {
+                continue;
+            }
+            if (!instructorQuery.isEmpty()
+                    && course.getInstructorNames().stream()
+                            .noneMatch(name -> name.toLowerCase(Locale.ROOT).contains(instructorQuery))) {
+                continue;
+            }
+            if (excludeDay != null && !excludeDay.isBlank() && course.hasMeetingOnDay(excludeDay)) {
+                continue;
+            }
+            matches.add(course);
+        }
+        return matches;
+    }
+
+    /**
+     * Checks whether the supplied day is a supported full name or abbreviation.
+     *
+     * @param day the value to validate
+     * @return true when the value identifies a day of the week
+     */
+    private static boolean isSupportedDay(String day) {
+        return switch (day.trim().toLowerCase(Locale.ROOT)) {
+            case "m", "mon", "monday",
+                    "t", "tu", "tue", "tues", "tuesday",
+                    "w", "wed", "wednesday",
+                    "th", "r", "thu", "thur", "thurs", "thursday",
+                    "f", "fri", "friday",
+                    "sa", "sat", "saturday",
+                    "su", "sun", "sunday" -> true;
+            default -> false;
+        };
+    }
 }
